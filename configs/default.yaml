@@ -4,3 +4,12 @@ data:
   satellite: goes19        # goes16 | goes18 | goes19
   sector: M1               # F | C | M1 | M2 (M = mesoscale, ~1-min cadence)
   band: 13                 # 10.3 um clean IR
+  bt_min: 180.0            # K, maps to 0
+  bt_max: 330.0            # K, maps to 1
+  max_gap_s: 90            # a larger gap between frames starts a new sequence
+  gaps: [2, 4, 10]         # training triplet gaps, in frames (= minutes at 1-min cadence)
+  crop: 256
+  splits:                  # by UTC date of sequence start; never mix days across splits
+    train: ["2025-06-01"]
+    val: ["2025-06-05"]
+    test: ["2025-06-10"]
