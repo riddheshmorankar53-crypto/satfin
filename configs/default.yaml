@@ -13,3 +13,9 @@ data:
     train: ["2025-06-01"]
     val: ["2025-06-05"]
     test: ["2025-06-10"]
+
+model:
+  channels: 1              # 1 = single IR band; N for multispectral input
+  ifnet_widths: [96, 64, 48]
+  scales: [4, 2, 1]        # coarse-to-fine; input is padded to a multiple of 4 * max(scales)
+  fusion_width: 32
