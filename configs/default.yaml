@@ -19,3 +19,30 @@ model:
   ifnet_widths: [96, 64, 48]
   scales: [4, 2, 1]        # coarse-to-fine; input is padded to a multiple of 4 * max(scales)
   fusion_width: 32
+
+loss:
+  charbonnier_eps: 1.0e-3
+  cold_bt: 235.0           # K; colder pixels (deep convection) get extra weight
+  cold_weight: 4.0
+  grad_thresh_K: 5.0       # |BT(I1) - BT(I0)| above this counts as fast-changing
+  grad_weight: 2.0
+  smooth_weight: 0.01      # flow smoothness
+  edge_weight: 0.1         # image-gradient loss for sharp edges; 0 disables
+
+train:
+  out_dir: runs
+  batch_size: 8
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  steps: 20000
+  grad_clip: 1.0
+  amp: true                # CUDA only
+  log_every: 50
+  val_every: 1000
+  val_samples: 256         # fixed, evenly spaced val triplets
+  num_workers: 4
+  seed: 0
+
+cpu:                       # merged over the config when no GPU is found
+  data: {crop: 128}
+  train: {batch_size: 4, steps: 2000, val_every: 250, val_samples: 64, num_workers: 0}

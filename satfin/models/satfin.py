@@ -28,14 +28,20 @@ class SatFIN(nn.Module):
         H, W = I0.shape[-2:]
         m = self.multiple
         pad = (0, (-W) % m, 0, (-H) % m)
-        I0p, I1p = F.pad(I0, pad, mode="replicate"), F.pad(I1, pad, mode="replicate")
+        # BT frames are low-contrast (std ~0.03); standardize per sample so the net sees O(1) signals
+        both = torch.cat([I0, I1], 1).flatten(1)
+        mu = both.mean(1).view(-1, 1, 1, 1)
+        sd = both.std(1).clamp_min(1e-3).view(-1, 1, 1, 1)
+        I0p = F.pad((I0 - mu) / sd, pad, mode="replicate")
+        I1p = F.pad((I1 - mu) / sd, pad, mode="replicate")
         flow, mask_logit = self.ifnet(I0p, I1p, t)
         mask = torch.sigmoid(mask_logit)
         w0, w1 = backward_warp(I0p, flow[:, :2]), backward_warp(I1p, flow[:, 2:])
         merged = mask * w0 + (1 - mask) * w1
-        pred = (merged + self.fusion(I0p, I1p, w0, w1, merged, mask, flow)).clamp(0, 1)
+        pred = merged + self.fusion(I0p, I1p, w0, w1, merged, mask, flow)
+        back = lambda x: (x[..., :H, :W] * sd + mu).clamp(0, 1)
         crop = lambda x: x[..., :H, :W]
-        return {"pred": crop(pred), "merged": crop(merged), "flow": crop(flow), "mask": crop(mask)}
+        return {"pred": back(pred), "merged": back(merged), "flow": crop(flow), "mask": crop(mask)}
 
 
 def build_model(cfg: dict) -> SatFIN:
