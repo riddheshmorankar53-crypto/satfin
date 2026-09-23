@@ -1,0 +1,6 @@
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  satellite: goes19        # goes16 | goes18 | goes19
+  sector: M1               # F | C | M1 | M2 (M = mesoscale, ~1-min cadence)
+  band: 13                 # 10.3 um clean IR
