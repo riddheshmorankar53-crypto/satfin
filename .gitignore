@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+runs/
+checkpoints/
+outputs/
+*.ckpt
+*.pt

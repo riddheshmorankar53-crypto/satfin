@@ -1,0 +1,17 @@
+# CUDA users: install torch first from https://pytorch.org/get-started/locally/ (pick your CUDA build)
+torch>=2.2
+numpy
+xarray
+netCDF4
+h5py
+s3fs
+boto3
+scikit-image
+opencv-python
+imageio
+imageio-ffmpeg
+pyyaml
+tqdm
+tensorboard
+streamlit
+pytest
