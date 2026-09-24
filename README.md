@@ -93,10 +93,12 @@ Classical baselines live in `satfin/baselines.py`: linear blending and OpenCV DI
 ## Evaluation
 
 ```bash
-python -m satfin.evaluate --ckpt runs/cpu-2k/best.pt --n 64   # -> outputs/results.md
+python -m satfin.evaluate --ckpt runs/cpu-2k/best.pt --n 100  # -> outputs/results.md, results.json
 ```
 
-PSNR, SSIM and MAE in kelvin on the **test** date. The comparison is SatFIN vs linear blending vs OpenCV DIS optical flow.
+PSNR, SSIM, MAE and cold-cloud MAE (ground-truth BT < 235 K) in kelvin, plus ms/frame, on the **test** date,
+overall and per gap (2/4/10 min). `--n` is triplets per gap. The comparison is SatFIN vs linear blending vs
+OpenCV DIS optical flow. `outputs/results.json` holds the same numbers for the dashboard.
 
 ## Inference
 
@@ -114,7 +116,9 @@ The model takes any t in [0,1], so `interpolate(model, i0, i1, ts)` in `satfin/i
 streamlit run app/dashboard.py
 ```
 
-Pick a checkpoint, a sequence and an upsampling factor. It shows the original, interpolated and ground-truth GIFs side by side, with PSNR/SSIM/MAE for that clip and the test-set table.
+Pick a checkpoint, a sequence and an upsampling factor. It shows the original, interpolated and ground-truth GIFs side by side,
+clip metrics for all three methods (with SatFIN's delta vs linear), per-frame PSNR across the gap, and the test-set
+evaluation from `outputs/results.json`: model stats, overall table, per-gap charts and tables.
 
 ## Results
 
@@ -136,11 +140,10 @@ After this short run, SatFIN beats linear blending but **not** classical DIS opt
 - Results come from a short CPU run and are below the DIS-flow baseline.
 - Nothing has been run on INSAT-3DS or other low-cadence imagery yet. There is no ground truth there, and the domain differs (resolution, sensor).
 - Metrics use a 128×128 center crop of 64 test triplets, not full frames.
-- The dashboard metric uses a fixed 150 K BT span (from `configs/default.yaml`).
 
 ## Future work
 
 - Full GPU training (`python -m satfin.train`) on more days and regions, then re-run `evaluate.py`.
-- Full-frame and per-gap (2/4/10 min) metrics, plus a cold-cloud-only error.
+- Full-frame metrics.
 - INSAT-3DS loader and inference.
 - Multispectral input (`model.channels`).
