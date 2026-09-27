@@ -10,3 +10,4 @@ checkpoints/
 outputs/
 *.ckpt
 *.pt
+graphify-out/
