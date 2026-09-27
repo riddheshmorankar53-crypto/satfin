@@ -3,8 +3,10 @@ import hashlib
 import json
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import imageio.v2 as imageio
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -17,7 +19,7 @@ from satfin.data.loaders import group_scans, read_scan  # noqa: E402
 from satfin.data.preprocess import align, normalize  # noqa: E402
 from satfin.infer import interpolate_sequence, load_model, save_netcdf  # noqa: E402
 from satfin.metrics import scores  # noqa: E402
-from satfin.visualize import error_map, save_gif, save_mp4, side_by_side, to_u8  # noqa: E402
+from satfin.visualize import error_map, label, save_gif, save_mp4, side_by_side, to_u8  # noqa: E402
 
 st.set_page_config(page_title="SatFIN", layout="wide")
 st.title("SatFIN: satellite frame interpolation")
@@ -31,8 +33,64 @@ if not ckpts:
     st.error("Need a checkpoint in runs/*/best.pt. Run scripts/quick_demo first.")
     st.stop()
 ckpt = st.sidebar.selectbox("Checkpoint", ckpts, format_func=lambda p: p.parent.name)
-source = st.sidebar.radio("Frames", ["Held-out sequence (has 1-min truth)", "Upload files"])
-factor = st.sidebar.select_slider("Upsampling factor", [2, 3, 4, 5, 6, 10], value=10,
+source = st.sidebar.radio("Frames", ["Held-out sequence (has 1-min truth)", "Upload files", "Live feed"])
+LIVE = ROOT / "outputs" / "live"
+
+
+@st.cache_data(max_entries=4)
+def live_video(names: tuple[str, ...]) -> bytes:
+    """Labeled MP4 of the given live frame PNGs (cached by file list, so it is rebuilt only when frames change)."""
+    imgs = [label(imageio.imread(LIVE / "frames" / n), f"{n[:10]} {n[11:13]}:{n[13:15]}:{n[15:17]} UTC  "
+                  + ("SatFIN" if n.endswith("_int.png") else "OBSERVED")) for n in names]
+    out = Path(tempfile.mkdtemp()) / "live.mp4"
+    save_mp4(imgs, out, fps=10)
+    return out.read_bytes()
+
+
+if source == "Live feed":
+    span_min = st.sidebar.select_slider("Animation span", [30, 60, 120, 360], value=60, format_func=lambda m: f"{m} min")
+
+    @st.fragment(run_every=60)
+    def live_view() -> None:
+        state_f = LIVE / "state.json"
+        if not state_f.exists():
+            st.info("The live loop is not running. Start it in a terminal:\n\n"
+                    "`python -m satfin.live --ckpt runs/gpu-20k/best.pt`")
+            return
+        s = json.loads(state_f.read_text())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        poll_age = (now - datetime.fromisoformat(s["last_poll"])).total_seconds() / 60
+        st.caption(f"{s['satellite']} {s['sector']} band {s['band']}: {s['k']} SatFIN frames between scans, "
+                   f"{s['window_hours']} h rolling window. Refreshes every minute.")
+        if poll_age > 3:
+            st.warning(f"No poll for {poll_age:.0f} min: is `python -m satfin.live` still running?")
+        if s.get("last_error"):
+            st.caption(f"Last error: {s['last_error']}")
+        pngs = sorted(p.name for p in (LIVE / "frames").glob("*.png"))
+        if not pngs:
+            st.info("Waiting for the first scans...")
+            return
+        latest = datetime.strptime(pngs[-1][:17], "%Y-%m-%dT%H%M%S")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Latest scan (UTC)", s["latest_scan"][11:19] if s["latest_scan"] else "-")
+        c2.metric("Scan age", f"{(now - datetime.fromisoformat(s['latest_scan'])).total_seconds() / 60:.1f} min"
+                  if s["latest_scan"] else "-", help="S3 delivery (~4-6 min) + processing")
+        c3.metric("Frames in window", f"{len(pngs):,}", help="observed + interpolated")
+        c4.metric("Last poll", f"{poll_age * 60:.0f} s ago")
+        recent = tuple(n for n in pngs if datetime.strptime(n[:17], "%Y-%m-%dT%H%M%S") >= latest - timedelta(minutes=span_min))
+        l, r = st.columns([3, 2])
+        l.markdown(f"**Last {span_min} min** ({len(recent)} frames, 10 fps)")
+        l.video(live_video(recent), autoplay=True, loop=True, muted=True)
+        obs = [n for n in pngs if n.endswith("_obs.png")]
+        r.markdown("**Latest observed scan**")
+        r.image(str(LIVE / "frames" / obs[-1]), caption=obs[-1][:17], width="stretch")
+        r.download_button("Latest NetCDF", (LIVE / "frames" / obs[-1].replace(".png", ".nc")).read_bytes(),
+                          obs[-1].replace(".png", ".nc"))
+
+    live_view()
+    st.stop()
+
+factor =st.sidebar.select_slider("Upsampling factor", [2, 3, 4, 5, 6, 10], value=10,
                                   help="factor N inserts N-1 frames per pair, e.g. 30 min / 4 = 7.5 min")
 
 

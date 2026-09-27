@@ -152,6 +152,26 @@ Output in `--out`:
 
 Animations are downscaled to ≤ 1024 px.
 
+## Live pipeline
+
+```bash
+python -m satfin.live --ckpt runs/gpu-20k/best.pt          # Himawari-9 Target B13: every 2.5-min scan -> 30-s frames
+python -m satfin.live --ckpt runs/gpu-20k/best.pt --once   # one poll (backfills the last 30 min), then exit
+```
+
+The loop checks the NOAA bucket every 30 s. Each new scan is downloaded to a temp dir, read, and the raw file is deleted.
+Only the previous frame stays in memory. SatFIN inserts `--k` frames (default 4) between the previous scan and the new one.
+Each frame is written to `outputs/live/frames/<UTC time>_{obs|int}.nc/.png`. Files older than `--window-hours` (default 6) are deleted, so disk use stays at about 350 MB.
+`outputs/live/state.json` holds the latest scan, lag and last error.
+Full-disk sectors are processed only once all 10 segments have arrived.
+The target window's 5-px jitter is removed by cropping every frame to one fixed grid (460×460 of 500×500).
+Missed scans (gaps over `--max-gap-min`, default 8) are not interpolated across.
+
+Timing: Himawari Target files reach S3 about 4–6 min after the scan, and processing takes about 1 s per scan on the GPU.
+The interpolated frames between two scans can only be made once the second scan arrives,
+so the 30-s animation runs about one scan interval (2.5 min) behind the newest data.
+In the dashboard, choose **Frames → Live feed** to see the latest scan, the lag, and an animation of the last 30 min–6 h that refreshes every minute.
+
 ## Dashboard
 
 ```bash

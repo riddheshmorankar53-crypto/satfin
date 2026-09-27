@@ -38,13 +38,19 @@ def same_place(a: dict, b: dict) -> bool:
     return a["center"] == b["center"]
 
 
-def align(bts: list[np.ndarray], metas: list[dict]) -> list[np.ndarray]:
-    """Crop frames so pixel (r, c) is the same fixed-grid location in all of them (no-op without projection)."""
+def align(bts: list[np.ndarray], metas: list[dict], ref: dict | None = None,
+          margin: int | None = None) -> list[np.ndarray]:
+    """Crop frames so pixel (r, c) is the same fixed-grid location in all of them (no-op without projection).
+
+    Shifts are relative to `ref` (default metas[0]); `margin` px are cropped per side (default: the largest shift),
+    so a fixed margin gives the same output size for any shift up to `margin`.
+    """
     if "projection" not in metas[0]:
         return bts
-    dc = [round(m["projection"]["coff"] - metas[0]["projection"]["coff"]) for m in metas]
-    dl = [round(m["projection"]["loff"] - metas[0]["projection"]["loff"]) for m in metas]
-    mc, ml = max(map(abs, dc)), max(map(abs, dl))
+    r = (ref or metas[0])["projection"]
+    dc = [round(m["projection"]["coff"] - r["coff"]) for m in metas]
+    dl = [round(m["projection"]["loff"] - r["loff"]) for m in metas]
+    mc, ml = (margin, margin) if margin is not None else (max(map(abs, dc)), max(map(abs, dl)))
     H, W = bts[0].shape
     return [b[ml + y:H - ml + y, mc + x:W - mc + x] for b, x, y in zip(bts, dc, dl)]
 
