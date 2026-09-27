@@ -26,7 +26,7 @@ from satfin.data.loaders import group_scans, read_scan
 from satfin.data.preprocess import align, denormalize, normalize, same_place
 from satfin.env_check import get_device
 from satfin.models.satfin import build_model
-from satfin.visualize import save_gif, save_mp4, side_by_side, to_u8
+from satfin.visualize import preview, save_gif, save_mp4, side_by_side, to_u8
 
 
 def load_model(ckpt_path: str | Path, dev: torch.device | None = None):
@@ -178,13 +178,14 @@ def main() -> None:
     save_netcdf(a.out / "interpolated.nc", seq, seq_t, flag, (dc["bt_min"], dc["bt_max"]), meta)
     for j, f in enumerate(seq):
         imageio.imwrite(a.out / f"interp_{j:03d}.png", to_u8(f))
-    save_gif(seq, a.out / "interpolated.gif", fps=a.fps)
-    save_mp4(seq, a.out / "interpolated.mp4", fps=a.fps)
-    save_gif(frames, a.out / "original.gif", fps=a.fps / (a.k + 1))
-    held = [frames[int(np.flatnonzero(~flag[:i + 1]).size) - 1] for i in range(len(seq))]  # last real frame
-    cols = {"original": held, "SatFIN": seq}
+    small = [preview(f) for f in seq]  # animations of large scenes are downscaled to <= 1024 px
+    save_gif(small, a.out / "interpolated.gif", fps=a.fps)
+    save_mp4(small, a.out / "interpolated.mp4", fps=a.fps)
+    save_gif(small[::a.k + 1], a.out / "original.gif", fps=a.fps / (a.k + 1))
+    held = [small[i // (a.k + 1) * (a.k + 1)] for i in range(len(seq))]  # last real frame
+    cols = {"original": held, "SatFIN": small}
     if gt is not None:
-        cols["ground truth"] = [f for g in gt for f in g[:-1]] + [gt[-1][-1]]
+        cols["ground truth"] = [preview(f) for g in gt for f in g[:-1]] + [preview(gt[-1][-1])]
         save_gif(cols["ground truth"], a.out / "ground_truth.gif", fps=a.fps)
     labels = [f"{str(t)[11:19]}{' *' if f else ''}" for t, f in zip(seq_t, flag)]
     comp = side_by_side(cols, labels)

@@ -11,6 +11,12 @@ def to_u8(x: np.ndarray) -> np.ndarray:
     return ((1 - np.clip(x, 0, 1)) * 255).astype(np.uint8)
 
 
+def preview(x: np.ndarray, max_side: int = 1024) -> np.ndarray:
+    """Downscale (area averaging) so the longest side is at most max_side; for animations of large scenes."""
+    f = max_side / max(x.shape[:2])
+    return x if f >= 1 else cv2.resize(x, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+
+
 def label(img: np.ndarray, text: str) -> np.ndarray:
     """Image (HxW or HxWx3 uint8) with a text strip on top."""
     img = img if img.ndim == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
