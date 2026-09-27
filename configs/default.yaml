@@ -6,11 +6,11 @@ data:
   band: 13                 # 10.3 um clean IR
   bt_min: 180.0            # K, maps to 0
   bt_max: 330.0            # K, maps to 1
-  max_gap_s: 90            # a larger gap between frames starts a new sequence
   gaps: [2, 4, 10]         # training triplet gaps, in frames (= minutes at 1-min cadence)
   crop: 256
+  split_platforms: [G19]   # only these platforms enter train/val/test (Himawari etc. stay external test data)
   splits:                  # by UTC date of sequence start; never mix days across splits
-    train: ["2025-06-01"]
+    train: ["2025-06-01", "2025-06-02", "2025-06-03"]
     val: ["2025-06-05"]
     test: ["2025-06-10"]
 

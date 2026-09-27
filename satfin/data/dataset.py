@@ -8,15 +8,19 @@ import torch
 from torch.utils.data import Dataset
 
 
-def split_dirs(processed_dir: str | Path, splits: dict[str, list[str]]) -> dict[str, list[Path]]:
-    """Assign sequence folders to splits by the UTC date of their first frame."""
+def split_dirs(processed_dir: str | Path, splits: dict[str, list[str]],
+               platforms: list[str] | None = None) -> dict[str, list[Path]]:
+    """Assign sequence folders to splits by the UTC date of their first frame (only `platforms`, if given)."""
     names = list(splits)
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             assert not set(splits[a]) & set(splits[b]), f"splits {a}/{b} share dates"
     out: dict[str, list[Path]] = {k: [] for k in splits}
     for m in sorted(Path(processed_dir).glob("*/meta.json")):
-        date = json.loads(m.read_text())["start"][:10]
+        meta = json.loads(m.read_text())
+        if platforms and meta.get("platform") not in platforms:
+            continue
+        date = meta["start"][:10]
         for k, dates in splits.items():
             if date in dates:
                 out[k].append(m.parent)
@@ -26,20 +30,21 @@ def split_dirs(processed_dir: str | Path, splits: dict[str, list[str]]) -> dict[
 class TripletDataset(Dataset):
     """Every (start, gap, intermediate) triplet from the given sequences.
 
-    Gaps are in frames; a triplet is skipped if its real time span exceeds gap minutes + 30 s
-    (dropped frames). t comes from real timestamps, not k/gap.
+    Gaps are in frames; a triplet is skipped if its real time span exceeds (gap + 0.5) x the median
+    cadence (dropped frames). t comes from real timestamps, not k/gap.
     """
 
     def __init__(self, seq_dirs: list[Path], gaps: list[int], crop: int, train: bool) -> None:
         self.crop, self.train = crop, train
         self.frames = [np.load(Path(d) / "frames.npy", mmap_mode="r") for d in seq_dirs]
         self.times = [np.load(Path(d) / "times.npy").astype("int64") for d in seq_dirs]  # seconds
+        cadence = [np.median(np.diff(tm)) for tm in self.times]
         self.index = [
             (s, i0, k, i0 + g)
             for s, tm in enumerate(self.times)
             for g in gaps
             for i0 in range(len(tm) - g)
-            if tm[i0 + g] - tm[i0] <= g * 60 + 30
+            if tm[i0 + g] - tm[i0] <= (g + 0.5) * cadence[s]
             for k in range(i0 + 1, i0 + g)
         ]
 

@@ -33,7 +33,7 @@ def seq_dir(tmp_path):
     times = np.datetime64("2025-06-01T18:00:00", "s") + np.arange(T) * np.timedelta64(60, "s")
     times[7] += np.timedelta64(3, "s")  # real cadence jitter
     np.save(d / "times.npy", times)
-    (d / "meta.json").write_text(json.dumps({"start": "2025-06-01T18:00:00"}))
+    (d / "meta.json").write_text(json.dumps({"start": "2025-06-01T18:00:00", "platform": "G19"}))
     return d
 
 
@@ -53,5 +53,6 @@ def test_dataset_shapes_and_ranges(seq_dir, train):
 def test_split_dirs_by_date(seq_dir):
     s = split_dirs(seq_dir.parent, {"train": ["2025-06-01"], "val": ["2025-06-05"]})
     assert s == {"train": [seq_dir], "val": []}
+    assert split_dirs(seq_dir.parent, {"train": ["2025-06-01"]}, ["Himawari-9"]) == {"train": []}
     with pytest.raises(AssertionError):
         split_dirs(seq_dir.parent, {"train": ["2025-06-01"], "val": ["2025-06-01"]})
