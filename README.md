@@ -2,12 +2,12 @@
 
 RIFE-style optical-flow frame interpolation to raise the temporal resolution of
 geostationary satellite imagery. Trains on 1-min GOES mesoscale data, runs
-inference on low-cadence data at any cadence. Readers exist for GOES ABI (NetCDF), Himawari AHI (HSD) and
-INSAT-3D/3DR/3DS imager (HDF5).
+inference on low-cadence data at any cadence. Two satellites: GOES-19 (ABI NetCDF) is the training and test
+dataset, and Himawari-9 (AHI HSD) is the live feed and the cross-satellite test.
 
 ```mermaid
 flowchart LR
-  A[NOAA S3<br>GOES ABI L1b / Himawari HSD<br>MOSDAC INSAT-3DS HDF5] -->|download.py / manual| B[raw files]
+  A[NOAA S3<br>GOES-19 ABI L1b / Himawari-9 HSD] -->|download.py / live.py| B[raw files]
   B -->|loaders/ + preprocess.py<br>counts/radiance to BT, fill, 0-1 norm| C[frames.npy per sequence]
   C -->|TripletDataset<br>gaps 2/4/10 min, real t| D[I0, It, I1, t]
   D --> E[IFNet<br>coarse-to-fine flow + mask]
@@ -61,23 +61,16 @@ every 2.5 min, so it has real ground truth. `FLDK` is the full disk, 10 segments
 python -m satfin.data.download --satellite himawari9 --sector Target --band 13 --start 2025-06-01T03:00 --hours 2
 ```
 
-INSAT-3DS needs a free MOSDAC account (https://mosdac.gov.in), so it can't be downloaded by script. Download the
-imager "L1B Standard" HDF5 files (`3SIMG_*_L1B_STD_*.h5`) into `data/raw/insat3ds/`. The reader reads `IMG_TIR1`
-(10.8 µm counts) through the `IMG_TIR1_TEMP` count-to-BT lookup table, and the scan time from the
-`Acquisition_Start_Time` attribute (or the filename). These names follow the INSAT-3D/3DR L1B format.
-If a product version names them differently, run `python -m satfin.data.loaders.insat <file.h5>` to list what is
-inside and set `data.insat` in the config. The names match satpy's INSAT-3D reader, and MOSDAC's INSAT-3DS product document lists the only L1B change from 3D/3DR as WV at 4 km instead of 8 km. **The loader is still tested only on synthetic files, not real INSAT-3DS data.**
-
 ## Preprocessing
 
 ```bash
 python -m satfin.data.preprocess
 ```
 
-Every GOES `.nc`, Himawari `.DAT(.bz2)` and INSAT `.h5` folder under `data/raw` is converted to brightness temperature (BT).
+Every GOES `.nc` and Himawari `.DAT(.bz2)` folder under `data/raw` is converted to brightness temperature (BT).
 GOES uses the Planck constants in each file. Himawari uses the HSD calibration block (count→radiance→effective
-temperature→BT correction). INSAT uses its lookup table. BT is normalized to [0,1] using fixed bounds (`bt_min`/`bt_max`, 180–330 K).
-Invalid pixels (GOES DQF ≥ 2, Himawari error/off-disk counts, INSAT fill) are NaN-filled with the frame mean.
+temperature→BT correction). BT is normalized to [0,1] using fixed bounds (`bt_min`/`bt_max`, 180–330 K).
+Invalid pixels (GOES DQF ≥ 2, Himawari error/off-disk counts) are NaN-filled with the frame mean.
 A new sequence starts after a gap longer than 1.5× the median cadence or when the scene moves.
 The Himawari target window jitters by about 5 px between scans. Frames are cropped to their common fixed-grid area so this does not show up as fake motion.
 Each contiguous run of frames goes to `data/processed/<name>/` as `frames.npy` (float16), `times.npy` and `meta.json`.
@@ -137,7 +130,6 @@ Each figure shows ground truth and each method on top, and |error| in K below.
 python -m satfin.infer --ckpt runs/gpu-20k/best.pt --seq data/processed/<name> --every 10 --k 9 --range 0:31
 # raw files at any cadence: 30 -> 7.5 min is --k 3, 10 -> 5 min is --k 1
 python -m satfin.infer --ckpt runs/gpu-20k/best.pt --files "data/raw/himawari9/FLDK/C13/*.DAT.bz2" --k 1
-python -m satfin.infer --ckpt runs/gpu-20k/best.pt --files "data/raw/insat3ds/*.h5" --k 3
 ```
 
 `k` frames are inserted between every consecutive pair, at t = j/(k+1). `interpolate(model, i0, i1, ts)` in
@@ -179,7 +171,7 @@ streamlit run app/dashboard.py
 ```
 
 Pick a checkpoint and an upsampling factor. Then either choose a processed sequence (which has 1-min truth) or
-upload files: GOES `.nc`, Himawari `.DAT(.bz2)` segments, INSAT `.h5`, or one `(T,H,W)` BT `.npy` in K.
+upload files: GOES `.nc`, Himawari `.DAT(.bz2)` segments, or one `(T,H,W)` BT `.npy` in K.
 The dashboard shows:
 - the side-by-side animation
 - a frame slider with difference maps (vs truth, or vs linear blending for uploads)
@@ -235,8 +227,6 @@ Each cell is 100 evenly spaced triplets per gap.
 - Training data is one IR band (C13) and 9 h over the southern US Great Plains in June 2025.
   Other seasons, regions, night/day mixes and other bands have not been tested.
 - Large motions (10-min gaps on fast-moving scenes) remain hard: SatFIN loses to DIS flow on the Himawari 10-min case.
-- INSAT-3DS: the loader is written to the documented MOSDAC L1B layout and tested only on synthetic files.
-  No real INSAT-3DS data has been run, so results there are unknown, and there is no 1-min truth for it.
 - The interpolated NetCDF carries source metadata and projection parameters, but no per-pixel lat/lon, and there is no GeoTIFF export.
 - NaN (off-disk/bad) pixels are filled with the frame mean before interpolation, so off-disk areas in full-disk output are not physical.
 - Multispectral input is supported by the model (`model.channels`) and tested, but the dataset/preprocessing pipeline is single-band.
@@ -244,5 +234,4 @@ Each cell is 100 evenly spaced triplets per gap.
 ## Future work
 
 - More training days, regions and a Himawari/GOES mix, with larger gaps, to handle large displacements.
-- Real INSAT-3DS files to validate the loader and check domain transfer.
 - Per-pixel lat/lon or GeoTIFF output; multiband preprocessing.
