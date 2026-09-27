@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 Pipeline: download → preprocess → train → evaluate → infer / dashboard.
-Plain-language guide to the project and its files: [docs/CODEBASE.md](docs/CODEBASE.md). Dashboard guide: [docs/DASHBOARD.md](docs/DASHBOARD.md).
+Plain-language guide to the project and its files: [docs/CODEBASE.md](docs/CODEBASE.md). Dashboard guide: [docs/DASHBOARD.md](docs/DASHBOARD.md). How the model works, in detail: [docs/MODEL.md](docs/MODEL.md).
 Quick demo of the whole pipeline on the small sample (small download, 500 training steps):
 `bash scripts/quick_demo.sh` or `powershell -File scripts/quick_demo.ps1`.
 Set `STEPS=20 N=8` for a smoke test that takes about 2 minutes.

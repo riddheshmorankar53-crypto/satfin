@@ -29,6 +29,8 @@ and creates the pictures in between. Ten-minute pictures become one-minute pictu
 2. **Slide the pictures.** Move both real pictures along that movement to the in-between moment, then mix them.
 3. **Touch up.** A small second network fixes spots the movement can't explain, like clouds that grow or disappear.
 
+The full step-by-step explanation is in [MODEL.md](MODEL.md).
+
 ## The two satellites
 
 | Satellite | What we use it for |
