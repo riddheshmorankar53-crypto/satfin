@@ -27,12 +27,15 @@ st.title("SatFIN: satellite frame interpolation")
 results = sorted(ROOT.glob("outputs/**/results.json"))
 evaluated = {(ROOT / json.loads(r.read_text())["meta"]["ckpt"]).resolve() for r in results}
 ckpts = sorted(ROOT.glob("runs/*/best.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
-if not st.sidebar.toggle("Show unevaluated runs", False, help="overfit tests, demo and old CPU runs"):
-    ckpts = [c for c in ckpts if c.resolve() in evaluated] or ckpts
+ckpts = [c for c in ckpts if c.resolve() in evaluated] or ckpts[:1]  # evaluated models; else the newest run
 if not ckpts:
     st.error("Need a checkpoint in runs/*/best.pt. Run scripts/quick_demo first.")
     st.stop()
-ckpt = st.sidebar.selectbox("Checkpoint", ckpts, format_func=lambda p: p.parent.name)
+if len(ckpts) > 1:
+    ckpt = st.sidebar.selectbox("Model", ckpts, format_func=lambda p: p.parent.name)
+else:
+    ckpt = ckpts[0]
+    st.sidebar.caption(f"Model: **{ckpt.parent.name}**")
 source = st.sidebar.radio("Frames", ["Held-out sequence (has 1-min truth)", "Upload files", "Live feed"])
 LIVE = ROOT / "outputs" / "live"
 
