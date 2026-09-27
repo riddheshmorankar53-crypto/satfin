@@ -179,6 +179,7 @@ The dashboard shows:
 - the test-set tables, per-gap charts and error maps
 
 Results can be downloaded as NetCDF, MP4 or GIF.
+The full guide to every control is in [docs/DASHBOARD.md](docs/DASHBOARD.md).
 
 ## Results
 
