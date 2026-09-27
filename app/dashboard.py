@@ -148,8 +148,11 @@ def artifacts(ckpt_path: str, key: str, k: int, _seq: list, _seq_t: np.ndarray, 
 
 gt, split = None, None
 if source.startswith("Held"):
-    seqs = sorted(p.parent for p in ROOT.glob("data/processed/*/frames.npy")
-                  if json.loads((p.parent / "meta.json").read_text())["n_frames"] > factor)  # room for 1 pair
+    metas = {p.parent: json.loads((p.parent / "meta.json").read_text())
+             for p in ROOT.glob("data/processed/*/frames.npy")}
+    seqs = sorted(d for d, m in metas.items()
+                  if m["n_frames"] > factor  # room for 1 pair
+                  and max(m["shape"]) <= 2000)  # full-disk scenes (5000+ px) are too slow here; use infer.py
     if not seqs:
         st.error(f"No processed sequence has more than {factor} frames. Lower the upsampling factor.")
         st.stop()
