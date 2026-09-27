@@ -9,6 +9,11 @@ under `insat` so they can be changed without code edits if a product version dif
   _FillValue        attribute on IMG_TIR1 (fill counts)
   Acquisition_Start_Time   root attribute, e.g. "01-JUN-2025T00:15:05"
 
+Checked against public docs (not yet a real file): satpy's insat3d_img_l1b_h5 reader uses the same names
+(IMG_<CH>, IMG_<CH>_TEMP LUT, _FillValue, Acquisition_Start_Time as %d-%b-%YT%H:%M:%S), and MOSDAC's
+"INSAT-3DS Operational Data Products" (V1) lists the only 3DS L1B change vs 3D/3DR as WV at 4 km instead of 8 km.
+3DS full disk: every 30 min, IR at 4 km.
+
 Run `python -m satfin.data.loaders.insat <file.h5>` to print a file's datasets and attributes.
 """
 import re

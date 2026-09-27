@@ -66,7 +66,7 @@ imager "L1B Standard" HDF5 files (`3SIMG_*_L1B_STD_*.h5`) into `data/raw/insat3d
 (10.8 µm counts) through the `IMG_TIR1_TEMP` count-to-BT lookup table, and the scan time from the
 `Acquisition_Start_Time` attribute (or the filename). These names follow the INSAT-3D/3DR L1B format.
 If a product version names them differently, run `python -m satfin.data.loaders.insat <file.h5>` to list what is
-inside and set `data.insat` in the config. **This loader has only been tested on synthetic files, not real INSAT-3DS data.**
+inside and set `data.insat` in the config. The names match satpy's INSAT-3D reader, and MOSDAC's INSAT-3DS product document lists the only L1B change from 3D/3DR as WV at 4 km instead of 8 km. **The loader is still tested only on synthetic files, not real INSAT-3DS data.**
 
 ## Preprocessing
 
