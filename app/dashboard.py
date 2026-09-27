@@ -1,4 +1,5 @@
 """SatFIN dashboard: streamlit run app/dashboard.py"""
+import hashlib
 import json
 import sys
 import tempfile
@@ -21,7 +22,11 @@ from satfin.visualize import error_map, save_gif, save_mp4, side_by_side, to_u8 
 st.set_page_config(page_title="SatFIN", layout="wide")
 st.title("SatFIN: satellite frame interpolation")
 
+results = sorted(ROOT.glob("outputs/**/results.json"))
+evaluated = {(ROOT / json.loads(r.read_text())["meta"]["ckpt"]).resolve() for r in results}
 ckpts = sorted(ROOT.glob("runs/*/best.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
+if not st.sidebar.toggle("Show unevaluated runs", False, help="overfit tests, demo and old CPU runs"):
+    ckpts = [c for c in ckpts if c.resolve() in evaluated] or ckpts
 if not ckpts:
     st.error("Need a checkpoint in runs/*/best.pt. Run scripts/quick_demo first.")
     st.stop()
@@ -60,10 +65,24 @@ def read_uploads(blobs: tuple[tuple[str, bytes], ...]) -> tuple[list[np.ndarray]
     return frames, np.array([m["time"] for _, m in scans], "datetime64[s]"), meta
 
 
-@st.cache_data
-def run(ckpt_path: str, frames: tuple, times: tuple, k: int) -> tuple[list, np.ndarray, np.ndarray]:
+# `key` identifies the selection; `_`-prefixed args are not hashed (hashing big frame arrays every rerun is slow)
+@st.cache_data(max_entries=8)
+def run(ckpt_path: str, key: str, k: int, _frames: list, _times: np.ndarray) -> tuple[list, np.ndarray, np.ndarray]:
     """Cached SatFIN interpolation of a whole sequence."""
-    return interpolate_sequence(model_for(ckpt_path)[0], list(frames), np.array(times), k)
+    return interpolate_sequence(model_for(ckpt_path)[0], _frames, _times, k)
+
+
+@st.cache_data(max_entries=8)
+def artifacts(ckpt_path: str, key: str, k: int, _seq: list, _seq_t: np.ndarray, _flag: np.ndarray,
+              _cols: dict, _labels: list, _meta: dict) -> dict[str, bytes]:
+    """Comparison GIF and the downloadable files, built once per selection."""
+    d = Path(tempfile.mkdtemp(prefix="satfin_dash_"))
+    comp = side_by_side(_cols, _labels)
+    save_gif(comp, d / "comparison.gif", fps=k + 1)
+    save_mp4(comp, d / "comparison.mp4", fps=k + 1)
+    save_gif(_seq, d / "interpolated.gif", fps=k + 1)
+    save_netcdf(d / "satfin.nc", _seq, _seq_t, _flag, (dc["bt_min"], dc["bt_max"]), _meta)
+    return {f.name: f.read_bytes() for f in d.iterdir()}
 
 
 gt, split = None, None
@@ -78,6 +97,7 @@ if source.startswith("Held"):
     n_pairs = st.sidebar.number_input("Input pairs", 1, max(1, (len(fr) - 1) // factor), 1)
     i0 = st.sidebar.number_input("Start frame", 0, len(fr) - 1 - factor * n_pairs, 0)
     keep = np.arange(i0, i0 + factor * n_pairs + 1, factor)
+    key = f"{seq}|{keep.tolist()}"
     frames = [fr[i].astype(np.float32) for i in keep]
     times, meta = tm[keep], json.loads((seq / "meta.json").read_text())
     gt = [fr[i].astype(np.float32) for i in range(keep[0], keep[-1] + 1)]
@@ -90,6 +110,7 @@ else:
     if not ups:
         st.info("Upload at least two frames (any cadence) in the sidebar.")
         st.stop()
+    key = hashlib.sha1(b"".join(u.name.encode() + u.getvalue() for u in ups)).hexdigest()
     try:
         frames, times, meta = read_uploads(tuple((u.name, u.getvalue()) for u in ups))
     except Exception as e:  # unreadable upload: show the reason, don't crash the app
@@ -103,16 +124,14 @@ else:
 
 k = factor - 1
 with st.spinner("Interpolating..."):
-    seq, seq_t, flag = run(str(ckpt), tuple(frames), tuple(times), k)
-held = [frames[int((~flag[:i + 1]).sum()) - 1] for i in range(len(seq))]
+    seq, seq_t, flag = run(str(ckpt), key, k, frames, np.asarray(times))
+held = [frames[i // factor] for i in range(len(seq))]  # last real frame
 labels = [f"{str(t)[11:19]}{' *' if f else ''}" for t, f in zip(seq_t, flag)]
-
-tmp = Path(tempfile.gettempdir()) / "satfin_dash"
-tmp.mkdir(exist_ok=True)
 cols = {"original": held, "SatFIN": seq} | ({"ground truth": gt} if gt is not None else {})
-save_gif(side_by_side(cols, labels), tmp / "comparison.gif", fps=factor)
+with st.spinner("Rendering animation and downloads..."):
+    files = artifacts(str(ckpt), key, k, seq, seq_t, flag, cols, labels, meta)
 st.subheader(f"Animation: original vs SatFIN{' vs ground truth' if gt is not None else ''} (* = interpolated)")
-st.image(str(tmp / "comparison.gif"))
+st.image(files["comparison.gif"])
 
 st.subheader("Frame by frame")
 i = st.slider("Frame", 0, len(seq) - 1, min(len(seq) - 1, k // 2 + 1))
@@ -124,29 +143,23 @@ if gt is not None:
     e = np.abs(seq[i] - gt[i]) * span
     c[3].image(error_map(e, 10), caption=f"|SatFIN - truth|, 0-10 K, MAE {e.mean():.2f} K", width="stretch")
 else:
-    lin = held[i] if not flag[i] else None
-    if lin is None:  # difference vs linear blend of the bracketing real frames
-        j0 = int((~flag[:i + 1]).sum()) - 1
-        t = (i % (k + 1)) / (k + 1)
-        lin = linear_blend(frames[j0], frames[j0 + 1], t)
+    j0, t = divmod(i, factor)  # difference vs linear blend of the bracketing real frames
+    lin = held[i] if not t else linear_blend(frames[j0], frames[j0 + 1], t / factor)
     e = np.abs(seq[i] - lin) * span
     c[2].image(error_map(e, 10), caption=f"|SatFIN - linear blend|, 0-10 K, mean {e.mean():.2f} K",
                width="stretch")
 
 st.subheader("Download")
-save_netcdf(tmp / "satfin.nc", seq, seq_t, flag, (dc["bt_min"], dc["bt_max"]), meta)
-save_mp4(side_by_side(cols, labels), tmp / "comparison.mp4", fps=factor)
-save_gif(seq, tmp / "interpolated.gif", fps=factor)
 d1, d2, d3 = st.columns(3)
-d1.download_button("NetCDF (BT in K, all frames)", (tmp / "satfin.nc").read_bytes(), "satfin_interpolated.nc")
-d2.download_button("Comparison MP4", (tmp / "comparison.mp4").read_bytes(), "satfin_comparison.mp4")
-d3.download_button("Interpolated GIF", (tmp / "interpolated.gif").read_bytes(), "satfin_interpolated.gif")
+d1.download_button("NetCDF (BT in K, all frames)", files["satfin.nc"], "satfin_interpolated.nc")
+d2.download_button("Comparison MP4", files["comparison.mp4"], "satfin_comparison.mp4")
+d3.download_button("Interpolated GIF", files["interpolated.gif"], "satfin_interpolated.gif")
 
 if gt is not None:
     st.subheader("This clip: all methods vs ground truth")
 
-    @st.cache_data
-    def clip_scores(ckpt_path: str, seq_dir: str, keep: tuple, factor: int) -> pd.DataFrame:
+    @st.cache_data(max_entries=8)
+    def clip_scores(ckpt_path: str, key: str, factor: int) -> pd.DataFrame:
         ts = [j / factor for j in range(1, factor)]
         rows = []
         for p, (a, b) in enumerate(zip(frames, frames[1:])):
@@ -159,7 +172,7 @@ if gt is not None:
                      for m, xs in preds.items() for t, x, y in zip(ts, xs, g)]
         return pd.DataFrame(rows)
 
-    df = clip_scores(str(ckpt), str(seq), tuple(keep.tolist()), factor)
+    df = clip_scores(str(ckpt), key, factor)
     mean = df.groupby("method", sort=False)[["psnr", "ssim", "mae", "cold_mae"]].mean()
     s, lin = mean.loc["SatFIN"], mean.loc["Linear blend"]
     k1, k2, k3, k4 = st.columns(4)
@@ -173,11 +186,14 @@ if gt is not None:
     r.caption("PSNR vs t, averaged over pairs (dips mid-gap, where frames are farthest from both inputs)")
     r.line_chart(df.groupby(["t", "method"]).psnr.mean().unstack(), x_label="t", y_label="PSNR (dB)")
 
-res = ROOT / "outputs" / "results.json"
 st.subheader("Test-set evaluation")
-if not res.exists():
+if not results:
     st.info("Run `python -m satfin.evaluate --ckpt <ckpt>` to generate outputs/results.json.")
     st.stop()
+set_names = {"outputs": "GOES test day (256 crop)", "goes_fullframe": "GOES test day (full frame)",
+         "himawari": "Himawari cross-satellite (full frame)"}
+res = st.selectbox("Results set", results,
+                   format_func=lambda p: set_names.get(p.parent.name, p.parent.relative_to(ROOT).as_posix()))
 R = json.loads(res.read_text())
 M = R["meta"]
 if Path(M["ckpt"]).resolve() != ckpt.resolve():
@@ -187,7 +203,8 @@ m1.metric("Parameters", f"{M['params'] / 1e6:.2f} M")
 m2.metric("Training steps", f"{M['train_steps']:,}")
 m3.metric("Best val PSNR (dB)", f"{M['best_val_psnr']:.2f}")
 m4.metric("Test triplets", f"{M['n_total']:,}")
-st.caption(f"`{M['split']}`, gaps {M['gaps_min']} frames (1 frame = 1 min on GOES mesoscale), {M['crop']}, "
+st.caption(f"`{M['split']}`, gaps {M['gaps_min']} frames (1 frame = 1 min on GOES mesoscale, 2.5 min on the "
+           f"Himawari target area), {M['crop']}, "
            f"cold cloud = ground-truth BT < {M['cold_bt_K']:.0f} K, timing on {M['device']}.")
 names = {"psnr": "PSNR (dB) ↑", "ssim": "SSIM ↑", "mae": "MAE (K) ↓", "cold_mae": "Cold-cloud MAE (K) ↓",
          "ms": "ms/frame"}
@@ -206,5 +223,5 @@ with st.expander("Per-gap tables and error maps"):
     for g, r in R["per_gap"].items():
         st.markdown(f"**Gap {g}**")
         st.dataframe(tbl(r))
-    for f in sorted((ROOT / "outputs" / "error_maps").glob("*.png")):
+    for f in sorted((res.parent / "error_maps").glob("*.png")):
         st.image(str(f), caption=f.stem)
