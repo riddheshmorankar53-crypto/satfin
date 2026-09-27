@@ -1,4 +1,4 @@
-"""Raw satellite files (GOES .nc, Himawari .DAT.bz2, INSAT .h5) -> normalized BT sequences.
+"""Raw satellite files (GOES .nc, Himawari .DAT.bz2) -> normalized BT sequences.
 
 python -m satfin.data.preprocess            # every folder of satellite files under data.raw_dir
 
@@ -72,7 +72,7 @@ def split_sequences(metas: list[dict], shapes: list[tuple]) -> list[list[int]]:
 def process_dir(raw_dir: Path, out_root: Path, cfg: dict) -> list[Path]:
     """Convert one folder of satellite files into one or more saved sequences."""
     scans = group_scans(find_files(raw_dir))
-    pairs = sorted((read_scan(f, cfg.get("insat")) for f in tqdm(scans, desc=raw_dir.name, unit="scan")),
+    pairs = sorted((read_scan(f) for f in tqdm(scans, desc=raw_dir.name, unit="scan")),
                    key=lambda p: p[1]["time"])
     bts, metas = [p[0] for p in pairs], [p[1] for p in pairs]
     out = []
@@ -85,8 +85,7 @@ def process_dir(raw_dir: Path, out_root: Path, cfg: dict) -> list[Path]:
             # ponytail: NaNs filled with the frame mean; fine for rare bad pixels, add a validity mask if fill fraction grows
             stack = np.where(nan, np.nanmean(stack, axis=(1, 2), keepdims=True), stack)
         m0, m1 = metas[run[0]], metas[run[-1]]
-        band = f"C{m0['band']:02d}" if isinstance(m0["band"], int) else m0["band"]
-        name = f"{m0['platform']}_{m0['scene']}_{band}_{m0['time']:%Y%m%dT%H%M%S}".replace(" ", "").replace("-", "")
+        name = f"{m0['platform']}_{m0['scene']}_C{m0['band']:02d}_{m0['time']:%Y%m%dT%H%M%S}".replace(" ", "").replace("-", "")
         d = out_root / name
         d.mkdir(parents=True, exist_ok=True)
         np.save(d / "frames.npy", normalize(stack, cfg["bt_min"], cfg["bt_max"]).astype(np.float16))
@@ -97,7 +96,7 @@ def process_dir(raw_dir: Path, out_root: Path, cfg: dict) -> list[Path]:
             "n_frames": len(run), "shape": list(stack.shape[1:]),
             "bt_min": cfg["bt_min"], "bt_max": cfg["bt_max"],
             "nan_filled_frac": float(nan.mean()), "bt_range_K": [float(stack.min()), float(stack.max())],
-            **{k: m0[k] for k in ("projection", "attrs") if k in m0},
+            **({"projection": m0["projection"]} if "projection" in m0 else {}),
         }
         (d / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
         out.append(d)

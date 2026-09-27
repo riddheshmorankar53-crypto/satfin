@@ -1,13 +1,12 @@
-"""Format dispatch: GOES ABI NetCDF (.nc), Himawari HSD (.DAT/.DAT.bz2), INSAT imager HDF5 (.h5)."""
+"""Format dispatch: GOES ABI NetCDF (.nc), Himawari HSD (.DAT/.DAT.bz2)."""
 from pathlib import Path
 
 import numpy as np
 
 from satfin.data.loaders.goes import read_goes_bt
 from satfin.data.loaders.himawari import read_himawari_bt, scan_key
-from satfin.data.loaders.insat import read_insat_bt
 
-PATTERNS = ("*.nc", "*.DAT", "*.DAT.bz2", "*.h5", "*.hdf5")
+PATTERNS = ("*.nc", "*.DAT", "*.DAT.bz2")
 
 
 def find_files(folder: Path) -> list[Path]:
@@ -23,13 +22,11 @@ def group_scans(paths: list[Path]) -> list[list[Path]]:
     return list(groups.values())
 
 
-def read_scan(files: list[Path], insat_names: dict | None = None) -> tuple[np.ndarray, dict]:
+def read_scan(files: list[Path]) -> tuple[np.ndarray, dict]:
     """BT (K, NaN where invalid) and metadata (time, platform, scene, band, center) for one scan."""
     name = files[0].name
     if name.endswith(".nc"):
         return read_goes_bt(files[0])
     if ".DAT" in name:
         return read_himawari_bt(files)
-    if name.endswith((".h5", ".hdf5")):
-        return read_insat_bt(files[0], insat_names)
     raise ValueError(f"unsupported file type: {name}")

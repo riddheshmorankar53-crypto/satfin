@@ -1,33 +1,13 @@
 import struct
 from datetime import datetime
 
-import h5py
 import numpy as np
 import pytest
 
 from satfin.data.download import himawari_time
 from satfin.data.loaders import group_scans
 from satfin.data.loaders.himawari import read_himawari_bt
-from satfin.data.loaders.insat import parse_time, read_insat_bt
 from satfin.data.preprocess import align
-
-
-def test_insat_lut_and_fill(tmp_path):
-    p = tmp_path / "3SIMG_01JUN2025_0015_L1B_STD_V01R00.h5"
-    counts = np.array([[[0, 10, 1023], [1023, 5, 0]]], np.uint16)
-    with h5py.File(p, "w") as f:
-        d = f.create_dataset("IMG_TIR1", data=counts)
-        d.attrs["_FillValue"] = np.array([1023], np.uint16)
-        f.create_dataset("IMG_TIR1_TEMP", data=np.linspace(180, 330, 1024).astype(np.float32))
-        f.attrs["Acquisition_Start_Time"] = b"01-JUN-2025T00:15:05"
-    bt, meta = read_insat_bt(p)
-    assert bt.shape == (2, 3) and np.isnan(bt[0, 2]) and np.isnan(bt[1, 0])
-    assert bt[0, 0] == pytest.approx(180) and bt[0, 1] == pytest.approx(180 + 150 * 10 / 1023)
-    assert meta["time"] == datetime(2025, 6, 1, 0, 15, 5)
-
-
-def test_insat_time_from_filename():
-    assert parse_time("3SIMG_01JUN2025_0015_L1B_STD_V01R00.h5") == datetime(2025, 6, 1, 0, 15)
 
 
 def _hsd(path, seg, counts, mjd=60827.125, coff=180.5):

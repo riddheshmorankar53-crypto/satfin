@@ -115,7 +115,7 @@ def read_uploads(blobs: tuple[tuple[str, bytes], ...]) -> tuple[list[np.ndarray]
         bt = np.load(d / blobs[0][0]).astype(np.float32)
         times = np.datetime64("2000-01-01T00:00:00", "s") + np.arange(len(bt)) * np.timedelta64(600, "s")
         return [normalize(b, dc["bt_min"], dc["bt_max"]) for b in bt], times, {"source": blobs[0][0]}
-    scans = sorted((read_scan(g, dc.get("insat")) for g in group_scans(list(d.iterdir()))),
+    scans = sorted((read_scan(g) for g in group_scans(list(d.iterdir()))),
                    key=lambda s: s[1]["time"])
     frames = [normalize(np.where(np.isnan(b), np.nanmean(b), b), dc["bt_min"], dc["bt_max"]).astype(np.float32)
               for b in align([b for b, _ in scans], [m for _, m in scans])]
@@ -163,7 +163,7 @@ if source.startswith("Held"):
     split = next((k for k, d in cfg["data"]["splits"].items() if in_splits and meta["start"][:10] in d), "unassigned")
     st.caption(f"Sequence split: **{split}**" + ("" if split == "test" else " (the model may have seen this data)"))
 else:
-    ups = st.sidebar.file_uploader("GOES .nc, Himawari .DAT(.bz2) segments, INSAT .h5, or one (T,H,W) BT .npy in K",
+    ups = st.sidebar.file_uploader("GOES .nc, Himawari .DAT(.bz2) segments, or one (T,H,W) BT .npy in K",
                                    accept_multiple_files=True)
     if not ups:
         st.info("Upload at least two frames (any cadence) in the sidebar.")

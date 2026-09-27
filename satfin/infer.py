@@ -4,7 +4,7 @@ python -m satfin.infer --ckpt runs/gpu/best.pt --seq data/processed/<name> --eve
 python -m satfin.infer --ckpt runs/gpu/best.pt --files "data/raw/himawari9/FLDK/C13/*.DAT.bz2" --k 1
   --seq     processed folder (frames.npy/times.npy/meta.json); --every N keeps every Nth frame
             (simulated low cadence) and, when N == k + 1, the skipped frames are ground truth
-  --files   raw GOES .nc / Himawari .DAT(.bz2) / INSAT .h5 files, any cadence
+  --files   raw GOES .nc / Himawari .DAT(.bz2) files, any cadence
   30 -> 15 -> 7.5 min: --k 3 (t = 1/4, 2/4, 3/4); 10 -> 1 min: --k 9
 
 Writes to --out: interpolated.nc (BT in K, time, `interpolated` flag, source metadata), interp_*.png,
@@ -138,7 +138,7 @@ def load_frames(a: argparse.Namespace, dc: dict) -> tuple[list[np.ndarray], np.n
     files = sorted(Path(p) for p in glob.glob(a.files))
     if not files:
         raise SystemExit(f"no files match {a.files}")
-    scans = sorted((read_scan(g, dc.get("insat")) for g in group_scans(files)), key=lambda s: s[1]["time"])
+    scans = sorted((read_scan(g) for g in group_scans(files)), key=lambda s: s[1]["time"])
     if not all(same_place(scans[0][1], m) for _, m in scans):
         raise SystemExit("input files cover different scene positions; pass one sector at a time")
     frames = []

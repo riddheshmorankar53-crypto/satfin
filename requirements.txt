@@ -3,7 +3,6 @@ torch>=2.2
 numpy
 xarray
 netCDF4
-h5py
 s3fs
 boto3
 scikit-image
