@@ -148,9 +148,10 @@ def artifacts(ckpt_path: str, key: str, k: int, _seq: list, _seq_t: np.ndarray, 
 
 gt, split = None, None
 if source.startswith("Held"):
-    seqs = sorted(p.parent for p in ROOT.glob("data/processed/*/frames.npy"))
+    seqs = sorted(p.parent for p in ROOT.glob("data/processed/*/frames.npy")
+                  if json.loads((p.parent / "meta.json").read_text())["n_frames"] > factor)  # room for 1 pair
     if not seqs:
-        st.error("No processed sequences in data/processed/.")
+        st.error(f"No processed sequence has more than {factor} frames. Lower the upsampling factor.")
         st.stop()
     seq = st.sidebar.selectbox("Sequence", seqs, format_func=lambda p: p.name)
     fr = np.load(seq / "frames.npy", mmap_mode="r")
