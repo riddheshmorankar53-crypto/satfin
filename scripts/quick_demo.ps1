@@ -11,5 +11,5 @@ Run -m satfin.data.preprocess
 if (-not (Test-Path runs/demo/best.pt)) { Run -m satfin.train --run demo --steps $Steps }
 Run -m satfin.evaluate --ckpt runs/demo/best.pt --n $N
 $Seq = (Get-ChildItem data/processed -Directory -Filter "*20250610*" | Select-Object -First 1).FullName
-Run -m satfin.infer --ckpt runs/demo/best.pt --seq $Seq --i0 0 --i1 10 --k 9
+Run -m satfin.infer --ckpt runs/demo/best.pt --seq $Seq --every 10 --k 9 --range 0:31
 Write-Host "Done. Dashboard: streamlit run app/dashboard.py"

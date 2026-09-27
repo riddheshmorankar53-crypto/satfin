@@ -85,7 +85,7 @@ def main() -> None:
     bounds = (dc["bt_min"], dc["bt_max"])
     random.seed(tc["seed"]); np.random.seed(tc["seed"]); torch.manual_seed(tc["seed"])
 
-    splits = split_dirs(dc["processed_dir"], dc["splits"])
+    splits = split_dirs(dc["processed_dir"], dc["splits"], dc.get("split_platforms"))
     if a.overfit:
         train_ds = val_ds = even_subset(TripletDataset(splits["train"], dc["gaps"], dc["crop"], train=False), a.overfit)
     else:

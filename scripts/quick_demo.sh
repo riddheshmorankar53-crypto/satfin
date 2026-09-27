@@ -9,5 +9,5 @@ python -m satfin.data.preprocess
 [ -f runs/demo/best.pt ] || python -m satfin.train --run demo --steps "${STEPS:-500}"
 python -m satfin.evaluate --ckpt runs/demo/best.pt --n "${N:-64}"
 SEQ=$(ls -d data/processed/*20250610* | head -1)
-python -m satfin.infer --ckpt runs/demo/best.pt --seq "$SEQ" --i0 0 --i1 10 --k 9
+python -m satfin.infer --ckpt runs/demo/best.pt --seq "$SEQ" --every 10 --k 9 --range 0:31
 echo "Done. Dashboard: streamlit run app/dashboard.py"

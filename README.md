@@ -2,12 +2,13 @@
 
 RIFE-style optical-flow frame interpolation to raise the temporal resolution of
 geostationary satellite imagery. Trains on 1-min GOES mesoscale data, runs
-inference on low-cadence data (10/30-min, incl. INSAT-3DS).
+inference on low-cadence data at any cadence. Readers exist for GOES ABI (NetCDF), Himawari AHI (HSD) and
+INSAT-3D/3DR/3DS imager (HDF5).
 
 ```mermaid
 flowchart LR
-  A[NOAA S3<br>GOES ABI L1b] -->|download.py| B[NetCDF radiances]
-  B -->|preprocess.py<br>Planck to BT, DQF fill, 0-1 norm| C[frames.npy per sequence]
+  A[NOAA S3<br>GOES ABI L1b / Himawari HSD<br>MOSDAC INSAT-3DS HDF5] -->|download.py / manual| B[raw files]
+  B -->|loaders/ + preprocess.py<br>counts/radiance to BT, fill, 0-1 norm| C[frames.npy per sequence]
   C -->|TripletDataset<br>gaps 2/4/10 min, real t| D[I0, It, I1, t]
   D --> E[IFNet<br>coarse-to-fine flow + mask]
   E --> F[backward warp I0, I1]
@@ -15,7 +16,7 @@ flowchart LR
   G --> H[predicted It]
   H -->|losses.py| I[train.py]
   H -->|evaluate.py| J[outputs/results.md]
-  H -->|infer.py / app| K[PNGs, GIFs, dashboard]
+  H -->|infer.py / app| K[NetCDF, PNG, GIF/MP4, dashboard]
 ```
 
 Pipeline: download → preprocess → train → evaluate → infer / dashboard.
@@ -30,11 +31,14 @@ Requires Python 3.10+.
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt       # CUDA: install torch from pytorch.org first
+pip install -r requirements.txt
+# NVIDIA GPU: replace the CPU wheel with a CUDA build, e.g.
+pip install --upgrade torch --index-url https://download.pytorch.org/whl/cu130
 python -m satfin.env_check            # prints Python/PyTorch/GPU info
 ```
 
-No GPU? Everything falls back to CPU with tiny settings.
+`env_check` must print your GPU. If it says "none found" on a machine with an NVIDIA card, the CPU wheel is installed.
+Without a GPU, everything falls back to CPU with tiny settings (the `cpu:` section of the config).
 
 ## Data download
 
@@ -50,27 +54,47 @@ Files land in `data/raw/<satellite>/<sector>/C<band>/`; existing files are skipp
 `--sector F|C` also works (full disk / CONUS, 10/5-min cadence). Defaults live in `configs/default.yaml`.
 Mesoscale sectors can be moved between events, so check the sector center when picking dates.
 
+Himawari-9 (`noaa-himawari9`, HSD `.DAT.bz2`) uses the same CLI. The `Target` sector is a 500×500 area scanned
+every 2.5 min, so it has real ground truth. `FLDK` is the full disk, 10 segments per 10-min scan.
+
+```bash
+python -m satfin.data.download --satellite himawari9 --sector Target --band 13 --start 2025-06-01T03:00 --hours 2
+```
+
+INSAT-3DS needs a free MOSDAC account (https://mosdac.gov.in), so it can't be downloaded by script. Download the
+imager "L1B Standard" HDF5 files (`3SIMG_*_L1B_STD_*.h5`) into `data/raw/insat3ds/`. The reader reads `IMG_TIR1`
+(10.8 µm counts) through the `IMG_TIR1_TEMP` count-to-BT lookup table, and the scan time from the
+`Acquisition_Start_Time` attribute (or the filename). These names follow the INSAT-3D/3DR L1B format.
+If a product version names them differently, run `python -m satfin.data.loaders.insat <file.h5>` to list what is
+inside and set `data.insat` in the config. **This loader has only been tested on synthetic files, not real INSAT-3DS data.**
+
 ## Preprocessing
 
 ```bash
 python -m satfin.data.preprocess
 ```
 
-Radiance becomes brightness temperature (BT) through each file's Planck constants. BT is normalized to [0,1] using fixed bounds (`bt_min`/`bt_max`, 180–330 K).
-Pixels flagged bad by the DQF quality field (value 2 or higher) are NaN-filled with the frame mean.
+Every GOES `.nc`, Himawari `.DAT(.bz2)` and INSAT `.h5` folder under `data/raw` is converted to brightness temperature (BT).
+GOES uses the Planck constants in each file. Himawari uses the HSD calibration block (count→radiance→effective
+temperature→BT correction). INSAT uses its lookup table. BT is normalized to [0,1] using fixed bounds (`bt_min`/`bt_max`, 180–330 K).
+Invalid pixels (GOES DQF ≥ 2, Himawari error/off-disk counts, INSAT fill) are NaN-filled with the frame mean.
+A new sequence starts after a gap longer than 1.5× the median cadence or when the scene moves.
+The Himawari target window jitters by about 5 px between scans. Frames are cropped to their common fixed-grid area so this does not show up as fake motion.
 Each contiguous run of frames goes to `data/processed/<name>/` as `frames.npy` (float16), `times.npy` and `meta.json`.
 
 Training triplets `(I0, It, I1, t)` are built from the 1-min sequences with simulated gaps of 2, 4 and 10 frames.
 `t` comes from the real scan timestamps. Augmentation uses random crops, flips, 90° rotations and time reversal.
 The train/val/test split is **by date** (`data.splits` in the config), so no scene leaks across splits.
+Only `data.split_platforms` (GOES-19) enters the splits. Himawari is kept out as a cross-satellite test set.
 
 | split | date | sector | frames | triplets |
 |---|---|---|---|---|
-| train | 2025-06-01 18–21Z | M1, 32.5N 98.9W | 180 | 2236 |
+| train | 2025-06-01, 06-02, 06-03 18–21Z | M1 | 3 × 180 | 6708 |
 | val | 2025-06-05 18–20Z | M1, 35.5N 101.0W | 120 | 1456 |
 | test | 2025-06-10 18–20Z | M2, 32.6N 102.0W | 120 | 1456 |
 
 ```bash
+python -m satfin.data.download --start 2025-06-02T18:00 --hours 3 --sector M1   # also 06-03
 python -m satfin.data.download --start 2025-06-05T18:00 --hours 2 --sector M1
 python -m satfin.data.download --start 2025-06-10T18:00 --hours 2 --sector M2
 ```
