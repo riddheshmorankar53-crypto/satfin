@@ -1,8 +1,10 @@
 """SatFIN dashboard: streamlit run app/dashboard.py"""
 import hashlib
+import io
 import json
 import sys
 import tempfile
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -50,6 +52,18 @@ def live_video(names: tuple[str, ...]) -> bytes:
     return out.read_bytes()
 
 
+@st.cache_data(max_entries=4)
+def live_zip(names: tuple[str, ...]) -> bytes:
+    """ZIP of the per-frame NetCDFs behind the given PNGs (skips frames pruned since listing)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for n in names:
+            nc = LIVE / "frames" / n.replace(".png", ".nc")
+            if nc.exists():
+                z.write(nc, nc.name)
+    return buf.getvalue()
+
+
 if source == "Live feed":
     span_min = st.sidebar.select_slider("Animation span", [30, 60, 120, 360], value=60, format_func=lambda m: f"{m} min")
 
@@ -83,7 +97,13 @@ if source == "Live feed":
         recent = tuple(n for n in pngs if datetime.strptime(n[:17], "%Y-%m-%dT%H%M%S") >= latest - timedelta(minutes=span_min))
         l, r = st.columns([3, 2])
         l.markdown(f"**Last {span_min} min** ({len(recent)} frames, 10 fps)")
-        l.video(live_video(recent), autoplay=True, loop=True, muted=True)
+        video = live_video(recent)
+        l.video(video, autoplay=True, loop=True, muted=True)
+        d1, d2 = l.columns(2)
+        stamp = f"{recent[0][:17]}_{recent[-1][:17]}"
+        d1.download_button(f"MP4 (last {span_min} min)", video, f"satfin_live_{stamp}.mp4")
+        d2.download_button(f"NetCDF ZIP ({len(recent)} frames)", live_zip(recent), f"satfin_live_{stamp}.zip",
+                           help="one .nc per frame, BT in K; obs = observed scan, int = SatFIN-interpolated")
         obs = [n for n in pngs if n.endswith("_obs.png")]
         r.markdown("**Latest observed scan**")
         r.image(str(LIVE / "frames" / obs[-1]), caption=obs[-1][:17], width="stretch")

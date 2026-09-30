@@ -59,6 +59,7 @@ The **Model** line just shows which trained model is in use. There's nothing to 
   - **Frames in window:** how many pictures are kept (the last 6 hours).
   - **Last poll:** when the page last checked for new pictures.
 - **Video:** the last 30 minutes to 6 hours; pick with **Animation span**. Each picture is labelled **OBSERVED** (real) or **SatFIN** (made).
+  Under it, two download buttons for the same span: **MP4** (the video) and **NetCDF ZIP** (one data file per picture, as temperatures).
 - **Latest observed scan:** the newest real picture, with a **Latest NetCDF** download button.
 - **It refreshes by itself** every minute.
 
